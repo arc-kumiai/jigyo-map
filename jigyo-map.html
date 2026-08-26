@@ -404,6 +404,7 @@
   <p style="font-size:11.5px;color:var(--ink-soft);margin:10px 0 0">編集は自動で保存されます。次に開いたときは最後に使ったマップが続きから開きます。</p>
   <div class="sheet-actions">
     <button class="btn-primary" id="dc-new">＋ 新規作成</button>
+    <button class="btn-ghost" id="dc-tpl">見本から</button>
     <button class="btn-ghost" id="dc-import">読み込む</button>
     <button class="btn-ghost" id="dc-close">閉じる</button>
   </div>
@@ -538,6 +539,11 @@
   function fresh(name){
     return {name:name||"新しいマップ",
       weights:{synergy:2,market:1.5,feasible:1.5,profit:1.5,risk:1},nodes:buildSeed()};
+  }
+  function emptyMap(name){
+    var r=mk(null,name||"中心"); r.id="root"; r.x=0; r.y=0; r.shape="pill";
+    return {name:name||"新しいマップ",
+      weights:{synergy:2,market:1.5,feasible:1.5,profit:1.5,risk:1},nodes:[r]};
   }
   function entry(id){ for(var i=0;i<docs.length;i++) if(docs[i].id===id) return docs[i]; return null; }
   function saveIndex(){ return put(IDX,JSON.stringify(docs)).catch(function(){}); }
@@ -815,6 +821,13 @@
       }
       nodes.appendChild(g);
     });
+    paintHint();
+  }
+  function paintHint(){
+    var e=document.getElementById("hint"); if(!e||!state) return;
+    if(state.nodes.length<=1){ e.textContent="中心をタップ →「＋ 子を足す」で枝を伸ばします"; return; }
+    e.textContent = fsOn ? "ドラッグで移動　右下の■で大きさ　ダブルタップで改名"
+                         : "タップで選択　ドラッグで移動　ダブルタップで改名";
   }
   function applyCam(){ if(gRoot) gRoot.setAttribute("transform","translate("+cam.x+","+cam.y+") scale("+cam.k+")"); }
   function bounds(){
@@ -987,9 +1000,7 @@
     document.body.classList.toggle("fs",on);
     moveOverlays(on);
     document.getElementById("z-fs").textContent=on?"✕":"⛶";
-    document.getElementById("hint").textContent=on
-      ? "ドラッグで移動　右下の■で大きさ　ダブルタップで改名"
-      : "タップで選択　ドラッグで移動　ダブルタップで改名";
+    paintHint();
     setTimeout(function(){ fit(); },60);
   }
   document.getElementById("z-fs").onclick=function(){
@@ -1415,6 +1426,10 @@
   document.getElementById("doc-open").onclick=openDocs;
   document.getElementById("dc-close").onclick=closeDocs;
   document.getElementById("dc-new").onclick=function(){
+    var v=prompt("新しいマップの名前（中心ノードの名前になります）","新しいマップ"); if(v===null) return;
+    createDoc(emptyMap(v.trim()||"新しいマップ")).then(function(){ closeDocs(); });
+  };
+  document.getElementById("dc-tpl").onclick=function(){
     var v=prompt("新しいマップの名前","新しいマップ"); if(v===null) return;
     createDoc(fresh(v.trim()||"新しいマップ")).then(function(){ closeDocs(); });
   };
