@@ -598,6 +598,9 @@
     if(msg) setSave(msg);
   }
   function createDoc(st,quiet){
+    return saveNow().then(function(){ return createDocNow(st,quiet); });
+  }
+  function createDocNow(st,quiet){
     var id=newId(); if(!st.name) st.name="新しいマップ";
     docs.unshift({id:id,name:st.name,updated:nowIso()});
     docId=id; state=st;
@@ -1403,7 +1406,8 @@
     docs.forEach(function(d){
       var row=document.createElement("div"); row.className="doc"+(d.id===docId?" cur":"");
       var left=document.createElement("div");
-      var nm=document.createElement("div"); nm.className="dn"; nm.textContent=d.name||"（無題）";
+      var live=(d.id===docId&&state&&state.name)?state.name:d.name;
+      var nm=document.createElement("div"); nm.className="dn"; nm.textContent=live||"（無題）";
       var dd=document.createElement("div"); dd.className="dd";
       dd.textContent=(d.id===docId?"編集中 · ":"")+"更新 "+fmt(d.updated);
       left.appendChild(nm); left.appendChild(dd);
@@ -1411,7 +1415,7 @@
       var bRen=document.createElement("button"); bRen.textContent="改名";
       bRen.onclick=function(ev){ ev.stopPropagation();
         var v=prompt("マップの名前",d.name||""); if(v===null) return;
-        v=v.trim()||d.name; d.name=v; if(d.id===docId){ state.name=v; save(); } else saveIndex();
+        v=v.trim()||d.name; d.name=v; if(d.id===docId){ state.name=v; saveNow(); } else saveIndex();
         paintDocs(); paintDocName(); };
       var bDup=document.createElement("button"); bDup.textContent="複製";
       bDup.onclick=function(ev){ ev.stopPropagation();
