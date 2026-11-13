@@ -68,11 +68,13 @@
   #svg.grabbing{cursor:grabbing}
   #stage.fs{position:fixed;inset:0;z-index:90;border-radius:0}
   #stage.fs #svg{height:100vh;height:100dvh}
-  .mapbtns{position:absolute;right:12px;top:12px;display:flex;flex-direction:column;gap:8px;z-index:5}
-  .mapbtns button{width:40px;height:40px;border:0;border-radius:14px;background:rgba(255,255,255,.92);
+  .mapbtns{position:absolute;right:12px;top:12px;display:flex;flex-direction:column;gap:6px;z-index:5}
+  .mapbtns button{width:36px;height:36px;border:0;border-radius:14px;background:rgba(255,255,255,.92);
     -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
     color:var(--ink);font-size:15px;cursor:pointer;padding:0;line-height:1;box-shadow:var(--shadow-s)}
   .mapbtns button:hover{background:#fff;box-shadow:var(--shadow-m);color:var(--ai)}
+  .mapbtns button.off{opacity:.38}
+  #nt-text{min-height:150px;line-height:1.65}
   .hint{position:absolute;left:12px;bottom:12px;font-size:11px;color:var(--ink-soft);
     background:rgba(255,255,255,.88);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
     padding:6px 12px;border-radius:999px;pointer-events:none;box-shadow:var(--shadow-s)}
@@ -98,6 +100,7 @@
   .nbrow button:hover{background:#EDE6FE;color:var(--ai)}
   #nb-add{background:var(--grad);color:#fff;box-shadow:0 4px 14px rgba(124,92,255,.34)}
   #nb-add:hover{color:#fff}
+  .nbrow button[aria-pressed="true"]{background:var(--grad);color:#fff;box-shadow:0 4px 14px rgba(124,92,255,.34)}
   .nbrow button.danger{flex:0 0 62px;background:#FFEDF1;color:#E03256}
   .nbrow button.danger:hover{background:#FFDFE6;color:#C8203F}
 
@@ -241,6 +244,7 @@
   body.dark #nodebar{background:rgba(36,31,51,.95)}
   body.dark #nb-close{background:#332B49;color:var(--ink-soft)}
   body.dark .nbrow button{background:#322A47;color:var(--ink)}
+  body.dark .nbrow button[aria-pressed="true"]{background:var(--grad);color:#fff}
   body.dark .nbrow button:hover{background:#3C3357;color:#C6B4FF}
   body.dark .nbrow button.danger{background:rgba(255,107,133,.16);color:#FF9AAC}
   body.dark .nbrow button.danger:hover{background:rgba(255,107,133,.26);color:#FFB6C3}
@@ -296,6 +300,8 @@
           <button id="z-out" title="縮小">−</button>
           <button id="z-fit" title="全体表示">⤢</button>
           <button id="z-tidy" title="整列しなおす">◇</button>
+          <button id="z-memo" title="付せんメモを貼る">📝</button>
+          <button id="z-bub" title="吹き出しの表示／非表示">💬</button>
           <button id="z-print" title="印刷">⎙</button>
           <button id="z-dark" title="ダークモード">☾</button>
         </div>
@@ -342,9 +348,9 @@
   var mem = {};
   function store(){ return ok ? localStorage : null; }
   window.storage = {
-    get: function(key){ return new Promise(function(res,rej){
+    get: function(key){ return new Promise(function(res){
       var v = ok ? localStorage.getItem(key) : (key in mem ? mem[key] : null);
-      if (v === null || v === undefined) rej(new Error("not found")); else res({key:key, value:v, shared:false});
+      res({key:key, value:(v===undefined?null:v), shared:false});
     });},
     set: function(key,val){ return new Promise(function(res,rej){
       try{ if(ok) localStorage.setItem(key,val); else mem[key]=val; res({key:key,value:val,shared:false}); }
@@ -369,10 +375,15 @@
   <div id="nb-name"><span id="nb-label"></span><button id="nb-close" aria-label="選択を解除">×</button></div>
   <div class="nbrow">
     <button id="nb-add">＋ 子を足す</button>
-    <button id="nb-rename">✎ 名前</button>
-    <button id="nb-score">◎ 採点</button>
+    <button id="nb-parent">↑ 親を足す</button>
   </div>
   <div class="nbrow">
+    <button id="nb-link">⇄ 付け替え</button>
+    <button id="nb-rename">✎ 名前</button>
+    <button id="nb-note">💬 メモ</button>
+  </div>
+  <div class="nbrow">
+    <button id="nb-score">◎ 採点</button>
     <button id="nb-style">◈ 見た目</button>
     <button id="nb-status">検討中</button>
     <button id="nb-del" class="danger">削除</button>
@@ -443,6 +454,22 @@
     <button class="btn-ghost" id="dc-close">閉じる</button>
   </div>
   <input type="file" id="dc-file" accept="application/json,.json" hidden>
+</div>
+
+<div class="sheet" id="notesheet" role="dialog" aria-modal="true" aria-label="メモ">
+  <h2 id="nt-title">メモ</h2>
+  <div class="f"><textarea id="nt-text" placeholder="気づいたこと、前提、懸念、次の一手…"></textarea></div>
+  <div class="f" id="nt-showwrap"><label>マップ上の吹き出し</label>
+    <div class="fonts" id="nt-show">
+      <button data-v="1" style="font-size:13px">表示する</button>
+      <button data-v="0" style="font-size:13px">隠す</button>
+    </div>
+  </div>
+  <div class="sheet-actions">
+    <button class="btn-primary" id="nt-save">保存する</button>
+    <button class="btn-ghost" id="nt-clear">消す</button>
+    <button class="btn-ghost" id="nt-close">閉じる</button>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -532,7 +559,7 @@
   function mk(parent,label){
     return {id:uid(),parent:parent,label:label,note:"",scores:blank(),rated:false,status:"draft",
       x:null,y:null,w:null,h:null,fs:null,shape:null,bg:null,border:null,color:null,font:null,bold:null,
-      lk:null,lc:null,lw:null,ld:null,la:null};
+      lk:null,lc:null,lw:null,ld:null,la:null,kind:null,noteOn:null};
   }
   function buildSeed(){
     var r=mk(null,"事業ドメイン"); r.id="root"; r.x=0; r.y=0; r.shape="pill";
@@ -547,7 +574,9 @@
   function kids(id){ return state.nodes.filter(function(n){ return n.parent===id; }); }
   function root(){ return byId("root")||state.nodes[0]; }
   function depth(n){ var d=0,c=n; while(c&&c.parent){ c=byId(c.parent); d++; if(d>12) break; } return d; }
-  function scorable(n){ return depth(n)>=2; }
+  function isMemo(n){ return !!n && n.kind==="note"; }
+  function scorable(n){ return !isMemo(n) && depth(n)>=2; }
+  function showsBubble(n){ return !isMemo(n) && !!n.note && n.noteOn!==false; }
   function cands(){ return state.nodes.filter(scorable); }
   function subtree(id){ var out=[],st=[id]; while(st.length){ var i=st.pop(); out.push(i); kids(i).forEach(function(c){ st.push(c.id); }); } return out; }
   function score(n){ var w=state.weights,num=0,den=0;
@@ -561,6 +590,7 @@
   var docId=null, docs=[], offline=false;
   function setSave(t){ var e=document.getElementById("save"); if(e) e.textContent=" "+t; }
   function get(k){ try{ return window.storage.get(k); }catch(e){ return Promise.reject(e); } }
+  function getSafe(k){ return get(k).then(function(r){ return r; },function(){ return null; }); }
   function put(k,v){ try{ return window.storage.set(k,v); }catch(e){ return Promise.reject(e); } }
   function del(k){ try{ return window.storage.delete(k); }catch(e){ return Promise.reject(e); } }
   function nowIso(){ return new Date().toISOString(); }
@@ -611,17 +641,17 @@
     docs.unshift({id:id,name:st.name,updated:nowIso()});
     docId=id; state=st;
     return put(DOCP+id,JSON.stringify(st)).then(saveIndex).then(function(){ return put(CUR,id); })
-      .then(function(){ ready("保存済み"); },function(){ offline=true; ready("保存なしで動作中"); })
+      .then(function(){ offline=false; ready("保存済み"); },function(){ offline=true; ready("保存なしで動作中"); })
       .then(function(){ if(!quiet) toast("新しいマップを作りました"); });
   }
   function openDoc(id){
-    return saveNow().then(function(){ return get(DOCP+id); }).then(function(r){
+    return saveNow().then(function(){ return getSafe(DOCP+id); }).then(function(r){
       state=r&&r.value?JSON.parse(r.value):fresh();
       docId=id; sel=null; put(CUR,id); ready("読み込み済み");
     }).catch(function(){ toast("開けませんでした"); });
   }
   function legacy(){
-    var tryKey=function(k,conv){ return get(k).then(function(r){
+    var tryKey=function(k,conv){ return getSafe(k).then(function(r){
       if(r&&r.value){ var v=JSON.parse(r.value); return conv?conv(v):v; } throw 0; }); };
     return tryKey("jigyo-map:v3")
       .catch(function(){ return tryKey("jigyo-map:v2"); })
@@ -629,17 +659,20 @@
       .catch(function(){ return null; })
       .then(function(st){ return createDoc(st||fresh("マイマップ"),true); });
   }
+  function osTheme(){
+    setTheme(!!(window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches));
+  }
   function load(){
-    get(THK).then(function(r){ setTheme(r&&r.value==="dark"); }).catch(function(){
-      if(window.matchMedia) setTheme(window.matchMedia("(prefers-color-scheme: dark)").matches);
-    });
-    get(IDX).then(function(r){
-      docs=r&&r.value?JSON.parse(r.value):[];
+    getSafe(THK).then(function(r){
+      if(r&&r.value) setTheme(r.value==="dark"); else osTheme();
+    }).catch(osTheme);
+    getSafe(IDX).then(function(r){
+      docs=(r&&r.value)?JSON.parse(r.value):[];
       if(!docs.length) return legacy();
-      return get(CUR).then(function(c){
+      return getSafe(CUR).then(function(c){
         var id=(c&&c.value&&entry(c.value))?c.value:docs[0].id;
         return openDoc(id);
-      }).catch(function(){ return openDoc(docs[0].id); });
+      });
     }).catch(function(){
       offline=true; docId="local"; state=fresh("マイマップ"); ready("保存なしで動作中");
     });
@@ -656,7 +689,7 @@
     if(!state.weights) state.weights={synergy:2,market:1.5,feasible:1.5,profit:1.5,risk:1};
     if(!state.nodes||!state.nodes.length) state.nodes=buildSeed();
     if(!byId("root")){
-      state.nodes.forEach(function(n){ if(!n.parent) n.parent="root"; });
+      state.nodes.forEach(function(n){ if(!n.parent&&n.kind!=="note") n.parent="root"; });
       var r=mk(null,"中心"); r.id="root"; r.x=0; r.y=0; r.shape="pill"; state.nodes.unshift(r);
     }
     state.nodes.forEach(function(n){
@@ -664,7 +697,7 @@
       AXES.forEach(function(a){ if(typeof n.scores[a.k]!=="number") n.scores[a.k]=3; });
       if(!n.status) n.status="draft";
       if(typeof n.note!=="string") n.note="";
-      ["w","h","fs","shape","bg","border","color","font","bold","lk","lc","lw","ld","la"].forEach(function(k){ if(n[k]===undefined) n[k]=null; });
+      ["w","h","fs","shape","bg","border","color","font","bold","lk","lc","lw","ld","la","kind","noteOn"].forEach(function(k){ if(n[k]===undefined) n[k]=null; });
     });
   }
 
@@ -690,14 +723,23 @@
   /* ---------- geometry ---------- */
   function defFs(d){ return d===0?15:(d===1?13.5:12); }
   function wrapTo(txt,per){
-    var out=[],cur="";
-    per=Math.max(2,per);
-    for(var i=0;i<txt.length;i++){ cur+=txt[i]; if(cur.length>=per){ out.push(cur); cur=""; } }
-    if(cur) out.push(cur);
+    per=Math.max(2,per); var out=[];
+    String(txt==null?"":txt).split("\n").forEach(function(seg){
+      if(seg===""){ out.push(""); return; }
+      var cur="";
+      for(var i=0;i<seg.length;i++){ cur+=seg[i]; if(cur.length>=per){ out.push(cur); cur=""; } }
+      if(cur) out.push(cur);
+    });
     return out.length?out:[""];
   }
   function box(n){
     var d=depth(n), fs=n.fs||defFs(d), label=n.label||"（無題）";
+    if(isMemo(n)){
+      var mfs=n.fs||12.5, mw=n.w||210, mh=n.h||140;
+      var mper=Math.max(3,Math.floor((mw-26)/mfs));
+      var mmax=Math.max(1,Math.floor((mh-16)/(mfs+5)));
+      return {w:mw,h:mh,fs:mfs,lines:wrapTo(n.label||"",mper).slice(0,mmax),d:d,memo:true};
+    }
     if(n.w&&n.h){
       var per=Math.floor((n.w-20)/fs);
       var maxLines=Math.max(1,Math.floor((n.h-10)/(fs+5)));
@@ -711,6 +753,14 @@
   }
   function styleOf(n,b){
     var d=b.d, hue=branchHue(n);
+    if(b.memo) return {
+      hue:hue, shape:n.shape||"round",
+      bg:n.bg||(dark?"#403518":"#FFF6D2"),
+      border:n.border||(dark?"#6F5E29":"#E9D493"),
+      color:n.color||(dark?"#FFE9A6":"#6A5100"),
+      font:fontCss(n.font)||GOTHIC,
+      weight:n.bold?"700":"400"
+    };
     return {
       hue:hue,
       shape:n.shape||(d===0?"pill":"round"),
@@ -796,8 +846,8 @@
       '<filter id="nshBig" x="-50%" y="-50%" width="200%" height="200%">'+
       '<feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="'+(dark?"#000000":"#5B2BA8")+'" flood-opacity="'+(dark?"0.6":"0.30")+'"/></filter>';
     svg.insertBefore(defs,gRoot);
-    var edges=el("g",{}), nodes=el("g",{});
-    gRoot.appendChild(edges); gRoot.appendChild(nodes);
+    var edges=el("g",{}), nodes=el("g",{}), bubbles=el("g",{});
+    gRoot.appendChild(edges); gRoot.appendChild(nodes); gRoot.appendChild(bubbles);
 
     state.nodes.forEach(function(n){
       if(!n.parent) return;
@@ -830,17 +880,18 @@
         "stroke-dasharray":n.status==="hold"?"6 4":"",
         opacity:n.status==="drop"?".42":1
       });
-      shp.setAttribute("filter", b.d===0?"url(#nshBig)":"url(#nsh)");
+      shp.setAttribute("filter", (b.d===0&&!b.memo)?"url(#nshBig)":"url(#nsh)");
       g.appendChild(shp);
-      var y0=-((b.lines.length-1)*(b.fs+5))/2+b.fs*0.35;
+      var y0=b.memo?(-b.h/2+b.fs+7):(-((b.lines.length-1)*(b.fs+5))/2+b.fs*0.35);
       b.lines.forEach(function(line,i){
-        var t=el("text",{x:0,y:y0+i*(b.fs+5),"text-anchor":"middle","font-size":b.fs,
+        var t=el("text",{x:b.memo?(-b.w/2+13):0,y:y0+i*(b.fs+5),
+          "text-anchor":b.memo?"start":"middle","font-size":b.fs,
           "font-family":s.font,"font-weight":s.weight,"letter-spacing":"0.01em",fill:s.color,
           opacity:n.status==="drop"?".5":1},line);
         if(n.status==="drop") t.setAttribute("text-decoration","line-through");
         g.appendChild(t);
       });
-      if(n.rated&&b.d>=2){
+      if(n.rated&&b.d>=2&&!b.memo){
         var sc=score(n), bw=sc>=100?30:26;
         g.appendChild(el("rect",{x:b.w/2-bw+6,y:-b.h/2-9,width:bw,height:19,rx:9.5,
           fill:ST_COLOR[n.status],filter:"url(#nsh)"}));
@@ -854,11 +905,31 @@
         h.style.cursor="nwse-resize"; g.appendChild(h);
       }
       nodes.appendChild(g);
+      if(state.bubbles!==false && showsBubble(n)) drawBubble(bubbles,n,b);
     });
     paintHint();
   }
+  function drawBubble(layer,n,b){
+    var fs=11.5, per=16, lines=wrapTo(n.note,per).slice(0,12);
+    var maxL=1; lines.forEach(function(l){ if(l.length>maxL) maxL=l.length; });
+    var w=Math.max(84,maxL*fs+24), h=lines.length*(fs+4)+16;
+    var bx=n.x+b.w/2+14, by=n.y-b.h/2-h-18;
+    var hue=branchHue(n), bg=dark?"#2E2746":"#FFFFFF", fg=dark?"#DDD7EE":"#4A4461";
+    var g=el("g",{transform:"translate("+bx+","+by+")","data-note":n.id});
+    g.style.cursor="pointer";
+    g.appendChild(el("path",{d:"M6,"+(h-3)+" L-14,"+(h+20)+" L30,"+(h-3)+" Z",
+      fill:bg,stroke:hue.base,"stroke-width":1.3}));
+    g.appendChild(el("rect",{x:0,y:0,width:w,height:h,rx:12,fill:bg,stroke:hue.base,
+      "stroke-width":1.3,filter:"url(#nsh)"}));
+    lines.forEach(function(l,i){
+      g.appendChild(el("text",{x:13,y:16+i*(fs+4),"font-size":fs,"font-family":GOTHIC,fill:fg},l));
+    });
+    layer.appendChild(g);
+  }
   function paintHint(){
     var e=document.getElementById("hint"); if(!e||!state) return;
+    if(linkMode){ e.textContent="新しい親にするノードをタップ（もう一度「付け替え」で取消）"; return; }
+    if(isMemo(byId(sel))){ e.textContent="付せん：ドラッグで移動　右下の■で大きさ　タップで本文を編集"; return; }
     if(state.nodes.length<=1){ e.textContent="中心をタップ →「＋ 子を足す」で枝を伸ばします"; return; }
     e.textContent = fsOn ? "ドラッグで移動　右下の■で大きさ　ダブルタップで改名"
                          : "タップで選択　ドラッグで移動　ダブルタップで改名";
@@ -888,7 +959,7 @@
   }
 
   /* ---------- pointer ---------- */
-  var pts={}, drag=null, pan=null, rsz=null, pinch=null, tapT=0, tapId=null;
+  var pts={}, drag=null, pan=null, rsz=null, pinch=null, tapT=0, tapId=null, bub=null;
   function toLocal(e){ var r=svg.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
   function attrUp(e,name){ var t=e.target; while(t&&t!==svg){ if(t.getAttribute&&t.getAttribute(name)) return t.getAttribute(name); t=t.parentNode; } return null; }
 
@@ -899,6 +970,8 @@
       var a=pts[ids[0]],b=pts[ids[1]];
       pinch={d:Math.hypot(a.x-b.x,a.y-b.y),cx:(a.x+b.x)/2,cy:(a.y+b.y)/2}; return; }
     var p=toLocal(e);
+    var nid=attrUp(e,"data-note");
+    if(nid){ bub={id:nid,sx:p.x,sy:p.y,moved:false}; return; }
     var rid=attrUp(e,"data-resize");
     if(rid){ var rn=byId(rid), rb=box(rn);
       rsz={id:rid,sx:p.x,sy:p.y,ow:rb.w,oh:rb.h,ox:rn.x,oy:rn.y}; return; }
@@ -917,6 +990,7 @@
       pinch.d=d; return;
     }
     var p=toLocal(e);
+    if(bub){ if(Math.abs(p.x-bub.sx)>4||Math.abs(p.y-bub.sy)>4) bub.moved=true; return; }
     if(rsz){
       var n=byId(rsz.id);
       var nw=Math.max(56,rsz.ow+(p.x-rsz.sx)/cam.k), nh=Math.max(30,rsz.oh+(p.y-rsz.sy)/cam.k);
@@ -938,9 +1012,11 @@
     delete pts[e.pointerId];
     if(Object.keys(pts).length<2) pinch=null;
     svg.classList.remove("grabbing");
+    if(bub){ var bt=bub; bub=null; if(!bt.moved){ select(bt.id); openNote(); } return; }
     if(rsz){ save(); rsz=null; return; }
     if(drag){
       if(!drag.moved){
+        if(linkMode){ var lt=drag.id; drag=null; doReparent(lt); return; }
         var now=Date.now();
         if(tapId===drag.id&&now-tapT<380){ select(drag.id); startRename(); tapT=0; tapId=null; }
         else { select(drag.id); tapT=now; tapId=drag.id; }
@@ -956,11 +1032,20 @@
   var bar=document.getElementById("nodebar"), inline=document.getElementById("inline");
   function select(id){
     sel=id; draw(); hideInline();
-    if(!id){ bar.classList.remove("on"); return; }
+    if(!id){ bar.classList.remove("on"); setLink(false); return; }
     var n=byId(id);
     document.getElementById("nb-label").textContent=n.label||"（無題）";
     document.getElementById("nb-status").innerHTML='<span style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;background:'+ST_COLOR[n.status]+'"></span>'+ST_JA[n.status];
+    var memo=isMemo(n);
+    document.getElementById("nb-label").textContent=memo
+      ? ("付せん："+((n.label||"").split("\n")[0]||"（空）")) : (n.label||"（無題）");
     document.getElementById("nb-score").hidden=!scorable(n);
+    document.getElementById("nb-add").hidden=memo;
+    document.getElementById("nb-parent").hidden=memo||n.id==="root";
+    document.getElementById("nb-link").hidden=memo||n.id==="root";
+    document.getElementById("nb-status").hidden=memo;
+    document.getElementById("nb-note").hidden=memo;
+    document.getElementById("nb-rename").textContent=memo?"✎ 本文":"✎ 名前";
     document.getElementById("nb-del").hidden=(n.id==="root");
     bar.classList.add("on");
   }
@@ -972,6 +1057,7 @@
   }
   function startRename(){
     if(!sel) return;
+    if(isMemo(byId(sel))){ openNote(); return; }
     inline.value=byId(sel).label; inline.style.display="block"; positionInline();
     inline.focus(); inline.select();
   }
@@ -1021,7 +1107,7 @@
   document.getElementById("nb-style").onclick=function(){ if(sel) openStyle(); };
 
   /* ---------- fullscreen ---------- */
-  var overlays=["nodebar","scrim","sheet","stylesheet","printsheet","docsheet","toast"];
+  var overlays=["nodebar","scrim","sheet","stylesheet","printsheet","docsheet","notesheet","toast"];
   function moveOverlays(into){
     overlays.forEach(function(id){
       var e=document.getElementById(id);
@@ -1237,10 +1323,11 @@
   function closeSheet(){ editing=null;
     document.getElementById("scrim").classList.remove("on");
     document.getElementById("sheet").classList.remove("on"); }
-  document.getElementById("scrim").onclick=function(){ closeSheet(); closeStyle(); closePrint(); closeDocs(); };
+  document.getElementById("scrim").onclick=function(){ closeSheet(); closeStyle(); closePrint(); closeDocs(); closeNote(); };
   document.getElementById("f-save").onclick=function(){
     if(!editing) return;
     editing.note=document.getElementById("f-note").value;
+    if(editing.note&&editing.noteOn===null) editing.noteOn=true;
     AXES.forEach(function(a){ editing.scores[a.k]=parseInt(document.getElementById("a-"+a.k).value,10); });
     editing.rated=true; save(); closeSheet(); draw(); renderAll(); toast("採点しました");
   };
@@ -1248,7 +1335,7 @@
     if(!editing) return; editing.rated=false; editing.scores=blank();
     save(); closeSheet(); draw(); renderAll();
   };
-  document.addEventListener("keydown",function(e){ if(e.key==="Escape"){ closeSheet(); closeStyle(); closePrint(); closeDocs(); } });
+  document.addEventListener("keydown",function(e){ if(e.key==="Escape"){ closeSheet(); closeStyle(); closePrint(); closeDocs(); closeNote(); } });
 
   /* ---------- rank / matrix ---------- */
   function renderAll(){ tally(); weightsUI(); rank(); matrix(); }
@@ -1401,6 +1488,120 @@
   document.getElementById("ex-png").onclick=savePng;
   document.getElementById("pr-png").onclick=function(){ closePrint(); savePng(); };
 
+  /* ---------- add a parent / re-attach ---------- */
+  var linkMode=false;
+  function setLink(on){
+    linkMode=!!on;
+    var b=document.getElementById("nb-link");
+    if(b) b.setAttribute("aria-pressed",linkMode?"true":"false");
+    paintHint();
+  }
+  document.getElementById("nb-parent").onclick=function(){
+    if(!sel) return;
+    var n=byId(sel);
+    if(!n||isMemo(n)||n.id==="root") return;
+    var p=byId(n.parent); if(!p) return;
+    var np=mk(n.parent,"");
+    np.x=(p.x+n.x)/2; np.y=(p.y+n.y)/2;
+    var dx=n.x-p.x, dy=n.y-p.y, L=Math.hypot(dx,dy)||1, off=95;
+    var moving=subtree(n.id);
+    n.parent=np.id;
+    state.nodes.push(np);
+    moving.forEach(function(id){ var m=byId(id); m.x+=dx/L*off; m.y+=dy/L*off; });
+    save(); draw(); select(np.id); renderAll(); startRename();
+  };
+  document.getElementById("nb-link").onclick=function(){
+    if(!sel) return;
+    if(linkMode){ setLink(false); return; }
+    setLink(true);
+    toast("新しい親にするノードをタップ");
+  };
+  function doReparent(targetId){
+    var n=sel?byId(sel):null, t=byId(targetId);
+    if(!n||!t||n.id==="root"||isMemo(n)){ setLink(false); return; }
+    if(t.id===n.id){ setLink(false); return; }
+    if(isMemo(t)){ toast("付せんは親にできません"); return; }
+    if(subtree(n.id).indexOf(t.id)>=0){ toast("自分より下のノードは親にできません"); return; }
+    if(n.parent===t.id){ toast("すでにその下にあります"); setLink(false); return; }
+    var gp=t.parent?byId(t.parent):null;
+    var ang=gp?Math.atan2(t.y-gp.y,t.x-gp.x):0;
+    var sib=kids(t.id).length;
+    ang+=(sib%2?1:-1)*0.42*Math.ceil(sib/2);
+    var r=(t.id==="root")?265:155;
+    var ddx=(t.x+Math.cos(ang)*r)-n.x, ddy=(t.y+Math.sin(ang)*r)-n.y;
+    var moving=subtree(n.id);
+    n.parent=t.id;
+    moving.forEach(function(id){ var m=byId(id); m.x+=ddx; m.y+=ddy; });
+    save(); draw(); select(n.id); setLink(false); renderAll();
+    toast("「"+(t.label||"親")+"」の下に移しました");
+  }
+
+  /* ---------- memo (bubble note + sticky note) ---------- */
+  var noteTarget=null, noteShow=true;
+  function syncNoteShow(){
+    document.querySelectorAll("#nt-show button").forEach(function(b){
+      b.setAttribute("aria-pressed", (b.dataset.v==="1")===noteShow ? "true":"false"); });
+  }
+  function openNote(){
+    if(!sel) return;
+    var n=byId(sel); if(!n) return;
+    noteTarget=n;
+    var memo=isMemo(n);
+    document.getElementById("nt-title").textContent=memo?"付せんメモ":((n.label||"ノード")+" のメモ");
+    document.getElementById("nt-text").value=memo?(n.label||""):(n.note||"");
+    document.getElementById("nt-showwrap").hidden=memo;
+    noteShow=(n.noteOn!==false); syncNoteShow();
+    document.getElementById("scrim").classList.add("on");
+    document.getElementById("notesheet").classList.add("on");
+    setTimeout(function(){ document.getElementById("nt-text").focus(); },120);
+  }
+  function closeNote(){
+    noteTarget=null;
+    document.getElementById("scrim").classList.remove("on");
+    document.getElementById("notesheet").classList.remove("on");
+  }
+  document.querySelectorAll("#nt-show button").forEach(function(b){
+    b.onclick=function(){ noteShow=(b.dataset.v==="1"); syncNoteShow(); };
+  });
+  document.getElementById("nt-close").onclick=closeNote;
+  document.getElementById("nt-save").onclick=function(){
+    if(!noteTarget) return;
+    var v=document.getElementById("nt-text").value;
+    if(isMemo(noteTarget)){
+      if(!v.trim()){ sel=noteTarget.id; closeNote(); delNode(true); toast("空の付せんを外しました"); return; }
+      noteTarget.label=v;
+    } else {
+      noteTarget.note=v; noteTarget.noteOn=noteShow;
+    }
+    save(); closeNote(); draw(); select(sel); renderAll(); toast("メモを保存しました");
+  };
+  document.getElementById("nt-clear").onclick=function(){
+    if(!noteTarget) return;
+    if(isMemo(noteTarget)){
+      if(!confirm("この付せんを削除します。")) return;
+      sel=noteTarget.id; closeNote(); delNode(true); toast("付せんを削除しました"); return;
+    }
+    noteTarget.note=""; noteTarget.noteOn=null;
+    save(); closeNote(); draw(); select(sel); renderAll(); toast("メモを消しました");
+  };
+  document.getElementById("nb-note").onclick=function(){ if(sel) openNote(); };
+  document.getElementById("z-memo").onclick=function(){
+    var r=svg.getBoundingClientRect();
+    var n=mk(null,"");
+    n.kind="note"; n.w=210; n.h=140; n.shape="round";
+    n.x=(r.width/2-cam.x)/cam.k; n.y=(r.height/2-cam.y)/cam.k;
+    state.nodes.push(n); save(); draw(); select(n.id); openNote();
+  };
+  function paintBub(){
+    var b=document.getElementById("z-bub");
+    if(b) b.classList.toggle("off", state && state.bubbles===false);
+  }
+  document.getElementById("z-bub").onclick=function(){
+    state.bubbles=(state.bubbles===false);
+    save(); draw(); paintBub();
+    toast(state.bubbles===false?"吹き出しを隠しました":"吹き出しを表示します");
+  };
+
   /* ---------- document sheet ---------- */
   function paintDocName(){
     var e=document.getElementById("docname");
@@ -1494,6 +1695,9 @@
         walk(c,lv+1);
       });
     })(root(),1);
+    var memos=state.nodes.filter(isMemo);
+    if(memos.length){ out.push("","## 付せんメモ");
+      memos.forEach(function(m){ out.push("- "+String(m.label||"").replace(/\n/g,"\n  ")); }); }
     var r=cands().filter(function(n){return n.rated;}).sort(function(a,b){return score(b)-score(a);});
     if(r.length){ out.push("","## 優先順位");
       r.forEach(function(n,i){ out.push((i+1)+". "+n.label+" — "+score(n)+"点 ／ "+ST_JA[n.status]); }); }
@@ -1529,7 +1733,7 @@
     setTheme(!dark); put(THK,dark?"dark":"light"); draw(); renderAll();
     toast(dark?"ダークモード":"ライトモード");
   };
-  function boot(){ draw(); fit(); renderAll(); }
+  function boot(){ draw(); fit(); renderAll(); paintBub(); }
   load();
 })();
 </script>
